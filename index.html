@@ -1,0 +1,159 @@
+
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>دبّرلي | خدمات غليزان</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+body{font-family:Arial,sans-serif;background:#f3f6f5;margin:0;color:#24332f}
+header{background:#126b58;color:white;padding:24px 16px;text-align:center}
+main{max-width:650px;margin:20px auto;padding:15px}
+section{background:white;padding:18px;margin:14px 0;border-radius:12px}
+input,textarea,select,button{box-sizing:border-box;width:100%;padding:12px;margin:7px 0;border:1px solid #ccc;border-radius:7px;font-size:16px}
+button{background:#126b58;color:white;border:0;cursor:pointer}
+h2{color:#126b58}
+.item{border-bottom:1px solid #ddd;padding:12px 0}
+#message{white-space:pre-wrap}
+</style>
+</head>
+<body>
+<header>
+<h1>دبّرلي</h1>
+<p>خدمات وحرفيون في غليزان</p>
+<p>اعثر على الحرفي الذي تحتاجه بسهولة</p>
+</header>
+<main>
+<section>
+<h2>حساب الحرفي</h2>
+<input id="email" type="email" placeholder="البريد الإلكتروني">
+<input id="password" type="password" placeholder="كلمة المرور">
+<button onclick="register()">إنشاء حساب</button>
+<button onclick="login()">تسجيل الدخول</button>
+<button onclick="logout()">تسجيل الخروج</button>
+</section>
+
+<section>
+<h2>سجّل خدماتك</h2>
+<p>يجب تسجيل الدخول أولًا. لن يظهر إعلانك قبل موافقة الإدارة.</p>
+<input id="name" placeholder="الاسم الكامل">
+<select id="service">
+<option value="">اختر مهنتك</option>
+<option>كهربائي</option><option>سباك</option>
+<option>نجار</option><option>دهان</option>
+<option>تصليح أجهزة منزلية</option>
+<option>صيانة مكيفات</option><option>حداد</option>
+<option>أخرى</option>
+</select>
+<input id="phone" type="tel" placeholder="رقم الهاتف">
+<input id="municipality" placeholder="البلدية">
+<textarea id="description" placeholder="عرّف بخدماتك"></textarea>
+<button onclick="submitListing()">إرسال طلب التسجيل</button>
+<p id="message" role="status"></p>
+</section>
+
+<section>
+<h2>الحرفيون المعتمدون</h2>
+<div id="workers">جارٍ تحميل القائمة...</div>
+</section>
+</main>
+
+<script>
+const SUPABASE_URL = "ضع_رابط_مشروعك_هنا";
+const SUPABASE_KEY = "ضع_مفتاح_النشر_هنا";
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+function msg(t){
+  document.getElementById("message").textContent=t;
+}
+
+async function register(){
+  const email=document.getElementById("email").value.trim();
+  const password=document.getElementById("password").value;
+  if(!email || password.length<6){
+    msg("أدخل البريد الإلكتروني وكلمة مرور من 6 أحرف على الأقل.");
+    return;
+  }
+  const {error}=await db.auth.signUp({email,password});
+  msg(error ? error.message :
+    "تم إرسال طلب إنشاء الحساب. تحقق من بريدك الإلكتروني إذا طُلب منك ذلك.");
+}
+
+async function login(){
+  const email=document.getElementById("email").value.trim();
+  const password=document.getElementById("password").value;
+  const {error}=await db.auth.signInWithPassword({email,password});
+  msg(error ? error.message : "تم تسجيل الدخول. يمكنك إرسال بياناتك.");
+}
+
+async function logout(){
+  const {error}=await db.auth.signOut();
+  msg(error ? error.message : "تم تسجيل الخروج.");
+}
+
+async function submitListing(){
+  const {data}=await db.auth.getUser();
+  if(!data.user){
+    msg("سجّل الدخول أولًا.");
+    return;
+  }
+
+  const full_name=document.getElementById("name").value.trim();
+  const service=document.getElementById("service").value;
+  const phone=document.getElementById("phone").value.trim();
+  const municipality=document.getElementById("municipality").value.trim();
+  const description=document.getElementById("description").value.trim();
+
+  if(!full_name || !service || !phone || !municipality){
+    msg("يرجى ملء الاسم والمهنة والهاتف والبلدية.");
+    return;
+  }
+
+  const {error}=await db.from("daberli_workers").insert({
+    user_id:data.user.id,
+    full_name,service,phone,municipality,description,
+    status:"pending"
+  });
+
+  msg(error ? "تعذّر إرسال الطلب: "+error.message :
+    "وصل طلبك، وهو الآن بانتظار موافقة الإدارة.");
+}
+
+async function loadWorkers(){
+  const box=document.getElementById("workers");
+  const {data,error}=await db.from("daberli_workers")
+    .select("full_name,service,phone,municipality,description")
+    .eq("status","approved")
+    .order("created_at",{ascending:false});
+
+  box.replaceChildren();
+  if(error){
+    box.textContent="تعذّر تحميل القائمة. تحقق من إعداد الاتصال.";
+    return;
+  }
+  if(!data.length){
+    box.textContent="لا يوجد حرفيون معتمدون حتى الآن.";
+    return;
+  }
+
+  data.forEach(w=>{
+    const item=document.createElement("div");
+    item.className="item";
+    const title=document.createElement("strong");
+    title.textContent=w.service+" — "+w.full_name;
+    const details=document.createElement("p");
+    details.textContent="البلدية: "+w.municipality;
+    const desc=document.createElement("p");
+    desc.textContent=w.description||"";
+    const tel=document.createElement("a");
+    tel.textContent="الاتصال بالحرفي";
+    tel.href="tel:"+w.phone;
+    item.append(title,details,desc,tel);
+    box.appendChild(item);
+  });
+}
+loadWorkers();
+</script>
+</body>
+</html>
